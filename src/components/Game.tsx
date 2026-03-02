@@ -32,10 +32,26 @@ export default function Game({ socket, room, playerInfo }: GameProps) {
     }
   };
 
-  const exportCoordinates = () => {
-    const json = JSON.stringify(editedTerritories, null, 2);
-    navigator.clipboard.writeText(json);
-    alert("Coordinates copied to clipboard! Please paste them to the AI.");
+  const exportCoordinates = async () => {
+    try {
+      const response = await fetch('/api/save-map', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(editedTerritories),
+      });
+      
+      if (response.ok) {
+        alert("Coordinates saved successfully to gameData.ts!");
+      } else {
+        const data = await response.json();
+        alert("Failed to save coordinates: " + data.error);
+      }
+    } catch (error) {
+      console.error("Error saving map:", error);
+      alert("Error saving coordinates. See console for details.");
+    }
   };
 
   return (
@@ -62,13 +78,13 @@ export default function Game({ socket, room, playerInfo }: GameProps) {
               <p className="text-xs text-zinc-400 mb-4">
                 1. Select a territory below.<br/>
                 2. Click on the map to set its position.<br/>
-                3. Click Export and paste to AI.
+                3. Click Save to update gameData.ts.
               </p>
               <button 
                 onClick={exportCoordinates}
                 className="w-full py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded transition-colors"
               >
-                Export Coordinates
+                Save Coordinates
               </button>
             </div>
           )}

@@ -2,6 +2,8 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { Server } from "socket.io";
 import http from "http";
+import fs from "fs";
+import path from "path";
 
 const PORT = 3000;
 
@@ -20,6 +22,42 @@ async function startServer() {
   // API routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  app.post("/api/save-map", (req, res) => {
+    try {
+      const newTerritories = req.body;
+      const gameDataPath = path.join(process.cwd(), "src", "gameData.ts");
+      let gameDataContent = fs.readFileSync(gameDataPath, "utf-8");
+
+      // Replace the TERRITORIES object in the file
+      const territoriesRegex = /export const TERRITORIES = \{[\s\S]*?\n\};\n/m;
+      
+      // Format the new territories object to match the file structure
+      let newTerritoriesStr = "export const TERRITORIES = {\n";
+      
+      // Group by region to keep it somewhat organized like the original
+      const regions = [...new Set(Object.values(newTerritories).map((t: any) => t.region))];
+      
+      for (const region of regions) {
+        newTerritoriesStr += `  // ${region}\n`;
+        for (const [id, t] of Object.entries(newTerritories)) {
+          if ((t as any).region === region) {
+            newTerritoriesStr += `  "${id}": ${JSON.stringify(t).replace(/"([^"]+)":/g, '$1:')},\n`;
+          }
+        }
+        newTerritoriesStr += "\n";
+      }
+      newTerritoriesStr += "};\n";
+
+      gameDataContent = gameDataContent.replace(territoriesRegex, newTerritoriesStr);
+      fs.writeFileSync(gameDataPath, gameDataContent);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to save map:", error);
+      res.status(500).json({ success: false, error: String(error) });
+    }
   });
 
   // Socket.io logic
