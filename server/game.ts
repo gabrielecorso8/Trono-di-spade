@@ -1,4 +1,4 @@
-import { GameState, Player, PrivatePlayerInfo, Card, Objective, TerritoryState, TurnPhase } from '../src/types';
+import { GameState, Player, PrivatePlayerInfo, Card, Objective, TerritoryState, TurnPhase, CardSymbol } from '../src/types';
 import { TERRITORIES, REGIONS, ADJACENCY } from '../src/gameData';
 
 export class GameRoom {
@@ -235,14 +235,14 @@ export class GameRoom {
       bonusTroops = 4;
     } else if (symbols.every(s => s === 'SWORD') || (symbols.filter(s => s === 'SWORD').length === 2 && hasWild)) {
       isValid = true;
-      bonusTroops = 5;
+      bonusTroops = 6;
     } else if (symbols.every(s => s === 'BOW') || (symbols.filter(s => s === 'BOW').length === 2 && hasWild)) {
       isValid = true;
-      bonusTroops = 6;
-    } else if (new Set(symbols.filter(s => s !== 'WILD')).size === symbols.filter(s => s !== 'WILD').length) {
+      bonusTroops = 8;
+    } else if (new Set(symbols.filter(s => s !== 'WILD')).size === 3 || (new Set(symbols.filter(s => s !== 'WILD')).size === 2 && hasWild)) {
       // All different (or different + wild)
       isValid = true;
-      bonusTroops = 7;
+      bonusTroops = 10;
     }
 
     if (!isValid) return false;
@@ -333,6 +333,21 @@ export class GameRoom {
     return true;
   }
 
+  checkWinCondition() {
+    // Basic win condition: conquer 24 territories or all territories
+    const players = this.state.players;
+    for (const p of players) {
+      const territoriesOwned = Object.values(this.state.territories).filter(t => t.owner === p.id).length;
+      if (territoriesOwned >= 24 || territoriesOwned === Object.keys(this.state.territories).length) {
+        this.state.winner = p.id;
+        this.state.phase = 'GAME_OVER';
+        this.log(`🏆 ${p.name} has won the game!`);
+        return true;
+      }
+    }
+    return false;
+  }
+
   resolveCombat() {
     const combat = this.state.combatState;
     if (!combat) return;
@@ -364,9 +379,20 @@ export class GameRoom {
       combat.status = 'CONQUERED';
       target.owner = combat.attackerId;
       target.troops = 0; // Will be filled by move
-      const player = this.state.players.find(p => p.id === combat.attackerId);
-      if (player) player.hasConqueredThisTurn = true;
-      this.log(`${player?.name} conquered ${TERRITORIES[combat.targetTerritory as keyof typeof TERRITORIES].name}!`);
+      
+      if (combat.attackerId === 'white_walkers') {
+        // White walkers auto move all but 1
+        const moveAmount = source.troops - 1;
+        source.troops -= moveAmount;
+        target.troops += moveAmount;
+        this.state.combatState = null;
+        this.log(`❄️ White Walkers conquered ${TERRITORIES[combat.targetTerritory as keyof typeof TERRITORIES].name}!`);
+      } else {
+        const player = this.state.players.find(p => p.id === combat.attackerId);
+        if (player) player.hasConqueredThisTurn = true;
+        this.log(`${player?.name} conquered ${TERRITORIES[combat.targetTerritory as keyof typeof TERRITORIES].name}!`);
+        this.checkWinCondition();
+      }
     } else {
       this.state.combatState = null; // Combat over
     }
@@ -434,8 +460,13 @@ export class GameRoom {
 
     // Next player
     this.state.currentPlayerIndex = (this.state.currentPlayerIndex + 1) % this.state.players.length;
+    
+    // Check if round ended
     if (this.state.currentPlayerIndex === 0) {
       this.state.turn++;
+      if (this.state.whiteWalkersEnabled) {
+        this.executeWhiteWalkersTurn();
+      }
     }
 
     const nextPlayer = this.state.players[this.state.currentPlayerIndex];
@@ -444,6 +475,61 @@ export class GameRoom {
     
     this.log(`Turn ${this.state.turn}: ${nextPlayer.name}'s turn.`);
     return true;
+  }
+
+  executeWhiteWalkersTurn() {
+    this.log('❄️ The White Walkers are moving...');
+    
+    // 1. Reinforce
+    const wwTerritories = Object.keys(this.state.territories).filter(t => this.state.territories[t].owner === 'white_walkers');
+    if (wwTerritories.length === 0) {
+      this.log('The White Walkers have been defeated!');
+      this.state.whiteWalkersEnabled = false;
+      return;
+    }
+
+    // Add 2 troops to each WW territory
+    wwTerritories.forEach(t => {
+      this.state.territories[t].troops += 2;
+    });
+
+    // 2. Attack
+    // Find all possible attacks (WW territory with > 1 troop adjacent to non-WW territory)
+    const possibleAttacks: { source: string, target: string }[] = [];
+    wwTerritories.forEach(source => {
+      if (this.state.territories[source].troops > 1) {
+        const adj = ADJACENCY[source as keyof typeof ADJACENCY] || [];
+        adj.forEach(target => {
+          if (this.state.territories[target].owner !== 'white_walkers') {
+            possibleAttacks.push({ source, target });
+          }
+        });
+      }
+    });
+
+    if (possibleAttacks.length > 0) {
+      // Pick a random attack
+      const attack = possibleAttacks[Math.floor(Math.random() * possibleAttacks.length)];
+      const source = this.state.territories[attack.source];
+      const dice = Math.min(3, source.troops - 1);
+      
+      this.log(`❄️ White Walkers attack ${TERRITORIES[attack.target as keyof typeof TERRITORIES].name} from ${TERRITORIES[attack.source as keyof typeof TERRITORIES].name}!`);
+      
+      this.state.combatState = {
+        attackerId: 'white_walkers',
+        defenderId: this.state.territories[attack.target].owner || 'neutral',
+        sourceTerritory: attack.source,
+        targetTerritory: attack.target,
+        attackerDice: dice,
+        defenderDice: 0,
+        status: 'WAITING_FOR_DEFENDER'
+      };
+
+      // If neutral, auto defend
+      if (!this.state.territories[attack.target].owner) {
+        this.defend('neutral', Math.min(2, this.state.territories[attack.target].troops));
+      }
+    }
   }
 
   drawCard(player: Player) {
@@ -469,7 +555,8 @@ export class GameRoom {
     for (const [id, t] of Object.entries(this.state.territories)) {
       if (t.owner === player.id) {
         territoriesCount++;
-        if (TERRITORIES[id as keyof typeof TERRITORIES].hasCastle) castlesCount++;
+        const territoryData = TERRITORIES[id as keyof typeof TERRITORIES] as any;
+        if (territoryData.hasCastle) castlesCount++;
       }
     }
 

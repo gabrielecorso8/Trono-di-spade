@@ -1,6 +1,6 @@
 import { Socket } from 'socket.io-client';
 import { GameState, PrivatePlayerInfo } from '../../types';
-import { FACTIONS, REGIONS, TERRITORIES } from '../../gameData';
+import { FACTIONS, REGIONS, TERRITORIES, ADJACENCY } from '../../gameData';
 
 interface SidebarProps {
   room: GameState;
@@ -40,10 +40,15 @@ export default function Sidebar({ room, socket, privateInfo, selectedTerritory, 
 
   const renderSelectedTerritory = () => {
     if (!selectedTerritory) return null;
-    const t = TERRITORIES[selectedTerritory as keyof typeof TERRITORIES];
+    const t = TERRITORIES[selectedTerritory as keyof typeof TERRITORIES] as any;
     const state = room.territories[selectedTerritory];
     const owner = room.players.find(p => p.id === state.owner);
     const ownerFaction = FACTIONS.find(f => f.id === owner?.faction);
+
+    const isAdjacentToOwned = Object.keys(room.territories).some(id => 
+      room.territories[id].owner === socket.id && 
+      ADJACENCY[id as keyof typeof ADJACENCY]?.includes(selectedTerritory)
+    );
 
     return (
       <div className="bg-black/40 p-5 rounded-2xl border border-white/10 mb-6 shadow-lg">
@@ -83,6 +88,16 @@ export default function Sidebar({ room, socket, privateInfo, selectedTerritory, 
             Reinforce (1)
           </button>
         )}
+        {isMyTurn && room.phase === 'PLAYING' && room.turnPhase === 'ATTACK' && state.owner !== socket.id && isAdjacentToOwned && (
+          <button onClick={() => onAction('initiate_attack', { targetId: selectedTerritory })} className="w-full bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-3 rounded-xl transition-colors uppercase tracking-wider">
+            Attack
+          </button>
+        )}
+        {isMyTurn && room.phase === 'PLAYING' && room.turnPhase === 'STRATEGIC_MOVE' && state.owner === socket.id && state.troops > 1 && (
+          <button onClick={() => onAction('initiate_move', { sourceId: selectedTerritory })} className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 rounded-xl transition-colors uppercase tracking-wider">
+            Move From Here
+          </button>
+        )}
       </div>
     );
   };
@@ -117,7 +132,7 @@ export default function Sidebar({ room, socket, privateInfo, selectedTerritory, 
   };
 
   return (
-    <div className="w-80 bg-zinc-950 border-l border-zinc-800 flex flex-col shadow-2xl z-10 h-full overflow-y-auto">
+    <div className="w-full md:w-80 bg-zinc-950 border-t md:border-t-0 md:border-l border-zinc-800 flex flex-col shadow-2xl z-10 h-1/3 md:h-full overflow-y-auto">
       <div className="p-6">
         {renderPlayers()}
         {renderSelectedTerritory()}

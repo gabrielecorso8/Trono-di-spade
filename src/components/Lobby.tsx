@@ -135,7 +135,7 @@ export default function Lobby({ socket, onJoin, room }: LobbyProps) {
           <div>
             <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em] mb-3">Faction</label>
             <div className="grid grid-cols-2 gap-3">
-              {FACTIONS.map((f) => (
+              {FACTIONS.filter(f => f.id !== 'white_walkers').map((f) => (
                 <button
                   key={f.id}
                   type="button"

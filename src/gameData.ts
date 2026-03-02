@@ -5,6 +5,7 @@ export const FACTIONS = [
   { id: "tyrell", name: "Tyrell", color: "#22C55E" }, // Green
   { id: "martell", name: "Martell", color: "#F97316" }, // Orange
   { id: "greyjoy", name: "Greyjoy", color: "#1E3A8A" }, // Dark Blue (Optional)
+  { id: "white_walkers", name: "White Walkers", color: "#38BDF8" }, // Light Blue
 ];
 
 export const REGIONS = [
