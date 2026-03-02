@@ -4,6 +4,7 @@ import { Server } from "socket.io";
 import http from "http";
 import fs from "fs";
 import path from "path";
+import { GameRoom } from "./server/game";
 
 const PORT = 3000;
 
@@ -61,7 +62,7 @@ async function startServer() {
   });
 
   // Socket.io logic
-  const rooms = new Map();
+  const rooms = new Map<string, GameRoom>();
 
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
@@ -70,55 +71,114 @@ async function startServer() {
       socket.join(roomId);
       
       if (!rooms.has(roomId)) {
-        rooms.set(roomId, {
-          id: roomId,
-          players: [],
-          gameState: {
-            phase: "LOBBY",
-            turn: 0,
-            currentPlayerIndex: 0,
-            territories: {},
-            log: []
-          }
-        });
+        rooms.set(roomId, new GameRoom(roomId));
       }
 
-      const room = rooms.get(roomId);
-      const existingPlayer = room.players.find((p: any) => p.id === socket.id);
+      const room = rooms.get(roomId)!;
+      const success = room.addPlayer(socket.id, playerName, faction);
       
-      if (!existingPlayer) {
-        room.players.push({
-          id: socket.id,
-          name: playerName,
-          faction: faction,
-          troops: 0,
-          cards: []
-        });
+      if (success) {
+        io.to(roomId).emit("room_update", room.state);
+        socket.emit("private_info", room.privateInfo[socket.id]);
+      } else {
+        socket.emit("error", "Could not join room");
       }
-
-      io.to(roomId).emit("room_update", room);
     });
 
     socket.on("leave_room", (roomId) => {
       socket.leave(roomId);
       const room = rooms.get(roomId);
       if (room) {
-        room.players = room.players.filter((p: any) => p.id !== socket.id);
-        io.to(roomId).emit("room_update", room);
-        if (room.players.length === 0) {
-          rooms.delete(roomId);
+        const success = room.removePlayer(socket.id);
+        if (success) {
+          io.to(roomId).emit("room_update", room.state);
+          if (room.state.players.length === 0) {
+            rooms.delete(roomId);
+          }
         }
+      }
+    });
+
+    socket.on("start_game", (roomId, whiteWalkersEnabled) => {
+      const room = rooms.get(roomId);
+      if (room && room.startGame(whiteWalkersEnabled)) {
+        io.to(roomId).emit("room_update", room.state);
+        // Send private info to each player
+        room.state.players.forEach(p => {
+          io.to(p.id).emit("private_info", room.privateInfo[p.id]);
+        });
+      }
+    });
+
+    socket.on("place_troops", (roomId, territoryId, amount) => {
+      const room = rooms.get(roomId);
+      if (room && room.placeTroops(socket.id, territoryId, amount)) {
+        io.to(roomId).emit("room_update", room.state);
+      }
+    });
+
+    socket.on("end_reinforcement", (roomId) => {
+      const room = rooms.get(roomId);
+      if (room && room.endReinforcement(socket.id)) {
+        io.to(roomId).emit("room_update", room.state);
+      }
+    });
+
+    socket.on("end_powerup", (roomId) => {
+      const room = rooms.get(roomId);
+      if (room && room.endPowerup(socket.id)) {
+        io.to(roomId).emit("room_update", room.state);
+      }
+    });
+
+    socket.on("attack", (roomId, sourceId, targetId, dice) => {
+      const room = rooms.get(roomId);
+      if (room && room.attack(socket.id, sourceId, targetId, dice)) {
+        io.to(roomId).emit("room_update", room.state);
+      }
+    });
+
+    socket.on("defend", (roomId, dice) => {
+      const room = rooms.get(roomId);
+      if (room && room.defend(socket.id, dice)) {
+        io.to(roomId).emit("room_update", room.state);
+      }
+    });
+
+    socket.on("move_troops_after_conquest", (roomId, amount) => {
+      const room = rooms.get(roomId);
+      if (room && room.moveTroopsAfterConquest(socket.id, amount)) {
+        io.to(roomId).emit("room_update", room.state);
+      }
+    });
+
+    socket.on("end_attack_phase", (roomId) => {
+      const room = rooms.get(roomId);
+      if (room && room.endAttackPhase(socket.id)) {
+        io.to(roomId).emit("room_update", room.state);
+      }
+    });
+
+    socket.on("strategic_move", (roomId, sourceId, targetId, amount) => {
+      const room = rooms.get(roomId);
+      if (room && room.strategicMove(socket.id, sourceId, targetId, amount)) {
+        io.to(roomId).emit("room_update", room.state);
+      }
+    });
+
+    socket.on("end_turn", (roomId) => {
+      const room = rooms.get(roomId);
+      if (room && room.endTurn(socket.id)) {
+        io.to(roomId).emit("room_update", room.state);
       }
     });
 
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);
       rooms.forEach((room, roomId) => {
-        const playerIndex = room.players.findIndex((p: any) => p.id === socket.id);
-        if (playerIndex !== -1) {
-          room.players.splice(playerIndex, 1);
-          io.to(roomId).emit("room_update", room);
-          if (room.players.length === 0) {
+        if (room.removePlayer(socket.id)) {
+          io.to(roomId).emit("room_update", room.state);
+          if (room.state.players.length === 0) {
             rooms.delete(roomId);
           }
         }
