@@ -7,9 +7,11 @@ interface MapOverlayProps {
   gameState: any;
   onTerritoryClick: (id: string) => void;
   selectedTerritory: string | null;
+  isEditMode?: boolean;
+  onMapClick?: (x: number, y: number) => void;
 }
 
-export default function MapOverlay({ territories, gameState, onTerritoryClick, selectedTerritory }: MapOverlayProps) {
+export default function MapOverlay({ territories, gameState, onTerritoryClick, selectedTerritory, isEditMode, onMapClick }: MapOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -71,7 +73,16 @@ export default function MapOverlay({ territories, gameState, onTerritoryClick, s
           scale: scale,
           backgroundImage: `url('/map.png')`,
           backgroundSize: 'cover',
-          backgroundPosition: 'center'
+          backgroundPosition: 'center',
+          cursor: isEditMode ? 'crosshair' : 'inherit'
+        }}
+        onClick={(e) => {
+          if (isEditMode && onMapClick) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            onMapClick(x, y);
+          }
         }}
       >
         {/* Draw territories */}
@@ -84,7 +95,7 @@ export default function MapOverlay({ territories, gameState, onTerritoryClick, s
           return (
             <div
               key={id}
-              className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer z-10 flex items-center justify-center w-16 h-16 rounded-full ${isSelected ? 'bg-white/10 ring-2 ring-white/50' : 'hover:bg-white/5'}`}
+              className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer z-10 flex items-center justify-center w-16 h-16 rounded-full ${isSelected ? 'bg-white/20 ring-2 ring-white/80' : 'hover:bg-white/10'} ${isEditMode ? 'bg-red-500/30 border border-red-500' : ''}`}
               style={{ left: `${t.x}%`, top: `${t.y}%` }}
               onClick={(e) => {
                 e.stopPropagation();

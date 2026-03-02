@@ -11,22 +11,67 @@ interface GameProps {
 
 export default function Game({ socket, room, playerInfo }: GameProps) {
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editedTerritories, setEditedTerritories] = useState<any>(TERRITORIES);
 
   const handleTerritoryClick = (territoryId: string) => {
     setSelectedTerritory(territoryId);
     // Here we will handle game logic (placement, attack, move)
   };
 
+  const handleMapClick = (x: number, y: number) => {
+    if (isEditMode && selectedTerritory) {
+      setEditedTerritories((prev: any) => ({
+        ...prev,
+        [selectedTerritory]: {
+          ...prev[selectedTerritory],
+          x: parseFloat(x.toFixed(2)),
+          y: parseFloat(y.toFixed(2))
+        }
+      }));
+    }
+  };
+
+  const exportCoordinates = () => {
+    const json = JSON.stringify(editedTerritories, null, 2);
+    navigator.clipboard.writeText(json);
+    alert("Coordinates copied to clipboard! Please paste them to the AI.");
+  };
+
   return (
     <div className="flex h-screen w-full bg-zinc-950 overflow-hidden">
       {/* Sidebar */}
       <div className="w-80 bg-zinc-900 border-r border-zinc-800 flex flex-col shadow-2xl z-10">
-        <div className="p-6 border-b border-zinc-800 bg-zinc-950">
-          <h2 className="text-xl font-serif font-bold text-amber-500 mb-1">Room: {room.id}</h2>
-          <p className="text-xs text-zinc-500 uppercase tracking-widest">Phase: {room.gameState.phase}</p>
+        <div className="p-6 border-b border-zinc-800 bg-zinc-950 flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-serif font-bold text-amber-500 mb-1">Room: {room.id}</h2>
+            <p className="text-xs text-zinc-500 uppercase tracking-widest">Phase: {room.gameState.phase}</p>
+          </div>
+          <button 
+            onClick={() => setIsEditMode(!isEditMode)}
+            className={`px-3 py-1 text-xs rounded border ${isEditMode ? 'bg-red-500/20 text-red-400 border-red-500/50' : 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}
+          >
+            {isEditMode ? 'Exit Edit' : 'Edit Map'}
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {isEditMode && (
+            <div className="bg-red-950/30 p-4 rounded-xl border border-red-900/50 mb-4">
+              <h3 className="text-sm font-bold text-red-400 mb-2">Map Editor Mode</h3>
+              <p className="text-xs text-zinc-400 mb-4">
+                1. Select a territory below.<br/>
+                2. Click on the map to set its position.<br/>
+                3. Click Export and paste to AI.
+              </p>
+              <button 
+                onClick={exportCoordinates}
+                className="w-full py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded transition-colors"
+              >
+                Export Coordinates
+              </button>
+            </div>
+          )}
           <div>
             <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-800 pb-2">Players</h3>
             <ul className="space-y-3">
@@ -74,6 +119,23 @@ export default function Game({ socket, room, playerInfo }: GameProps) {
               </div>
             </div>
           )}
+
+          {isEditMode && (
+            <div>
+              <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-800 pb-2">All Territories</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(editedTerritories).map(([id, t]: [string, any]) => (
+                  <button
+                    key={id}
+                    onClick={() => setSelectedTerritory(id)}
+                    className={`text-left p-2 rounded text-xs truncate ${selectedTerritory === id ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50' : 'bg-zinc-900 text-zinc-500 border border-zinc-800 hover:bg-zinc-800'}`}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-4 border-t border-zinc-800 bg-zinc-950">
@@ -89,10 +151,12 @@ export default function Game({ socket, room, playerInfo }: GameProps) {
       {/* Main Map Area */}
       <div className="flex-1 relative bg-[#1a1c23] overflow-hidden flex items-center justify-center">
         <MapOverlay 
-          territories={TERRITORIES} 
+          territories={editedTerritories} 
           gameState={room.gameState} 
           onTerritoryClick={handleTerritoryClick}
           selectedTerritory={selectedTerritory}
+          isEditMode={isEditMode}
+          onMapClick={handleMapClick}
         />
       </div>
     </div>
